@@ -1,8 +1,21 @@
-<launch>
-    <arg name="version" default="safe"/>
-    <arg name="direction" default="left"/>
-    <node name="static_obstacle_avoidance" pkg="obstacle_detector" type="static_obstacle_avoidance.py" output="screen">
-        <param name="version" value="$(arg version)"/>
-        <param name="direction" value="$(arg direction)"/>
-    </node>
+<launch> 
+  <arg name="version" default="safe"/>
+  <arg name="direction" default="left"/>
+
+  <!-- 정적 장애물 회피 -->
+  <node name="static_obstacle_avoidance" pkg="obstacle_detector" type="static_obstacle_avoidance.py" output="screen">
+    <param name="version" value="$(arg version)"/>
+    <param name="direction" value="$(arg direction)"/>
+  </node>
+
+  <!-- 라바콘 웨이포인트 생성 노드 -->
+  <node name="rubbercone_waypoint_generator" pkg="obstacle_detector" type="rubbercone_waypoint_generator.py" output="screen">
+    <param name="min_x" value="0.0"/>
+    <param name="max_x" value="10.0"/>
+    <param name="min_y" value="-1.5"/>
+    <param name="max_y" value="1.5"/>
+  </node>
+
+  <!-- 라바콘 추종 주행 노드 -->
+  <node name="rubbercone_obstacle_avoidance" pkg="obstacle_detector" type="rubbercone_obstacle_avoidance.py" output="screen" />
 </launch>
