@@ -1,0 +1,3 @@
+<launch>
+    <node name="imu_heading_calculator" pkg="heading" type="imu_heading_calc.py" output="screen"/>
+</launch>

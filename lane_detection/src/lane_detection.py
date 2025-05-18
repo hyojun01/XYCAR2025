@@ -72,7 +72,8 @@ class LaneDetection(object):
                 # self.pid = PID(0.78, 0.0005, 0.40375)
                 # self.pid = PID(0.8, 0.0005, 0.43)
             else:
-                self.pid = PID(0.7, 0.0008, 0.15)
+                # self.pid = PID(0.7, 0.0008, 0.15)
+                self.pid = PID(0.78, 0.0005, 0.405) # 0828 아침 잘되는버전
 
 
             # self.pid = PID(0.6, 0.002, 0.15)
@@ -99,10 +100,10 @@ class LaneDetection(object):
                         last_x_location = x_location  # x 위치 갱신
                     
                     
-                    self.steer = round(self.pid.pid_control(x_location - 320))  # PID 제어를 통한 각도 계산
+                    self.steer = round(self.pid.pid_control(x_location - 260))  # PID 제어를 통한 각도 계산
 
                     if self.version == 'fast':
-                        self.motor = 30 # 모터 속도 설정 30
+                        self.motor = 60 # 모터 속도 설정 30
                     else:
                         self.motor = 30
                     

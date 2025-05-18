@@ -65,7 +65,7 @@ class XycarPlanner:
             rospy.Subscriber("/xycar_motor_lane", xycar_motor, self.ctrlLaneCB)
             rospy.Subscriber("/xycar_motor_static", xycar_motor, self.ctrlStaticCB)
 
-            rospy.Subscriber("/raw_obstacles", Obstacles, self.obstacleCB)
+            rospy.Subscriber("/raw_obstacles_static", Obstacles, self.obstacleCB)
 
             # 모터 제어 명령과 현재 속도 퍼블리셔 설정
             self.ctrl_cmd_pub = rospy.Publisher('/xycar_motor', XycarMotor, queue_size=1)
@@ -101,9 +101,11 @@ class XycarPlanner:
                 if self.static_mode_flag == True:
                     self.motor = self.ctrl_static.speed
                     self.steer = self.ctrl_static.angle
+                    print("Current mode : Obstacles")
                 else:
                     self.motor = self.ctrl_lane.speed
                     self.steer = self.ctrl_lane.angle
+                    print("Current mode : Lane")
 
                 # MODE에 따른 motor, steer 설정
 

@@ -2,8 +2,11 @@
   <!-- 차선 기반 주행  -->
   <include file="$(find lane_detection)/launch/lane_detection.launch"/>
 
+  <!-- 헤딩딩  -->
+  <include file="$(find heading)/launch/imu_heading.launch"/>
+
   <!-- 정적 장애물 주행 로직 진행 -->
-  <include file="$(find obstacle_detector)/launch/static_obstacle.launch"/>
+  <!-- <include file="$(find obstacle_detector)/launch/static_obstacle.launch"/> -->
   
   <node name="xycar_planner" pkg="xycar_planner" type="xycar_planner_static_test.py" output="screen"/>
   

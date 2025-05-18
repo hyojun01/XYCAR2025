@@ -1,8 +1,10 @@
 <launch>
     <arg name="version" default="safe"/>
-    <arg name="direction" default="left"/>
     <node name="static_obstacle_avoidance" pkg="obstacle_detector" type="static_obstacle_avoidance.py" output="screen">
         <param name="version" value="$(arg version)"/>
-        <param name="direction" value="$(arg direction)"/>
+    </node>
+
+    <node name="lidar_to_obstacles" pkg="obstacle_detector" type="lidar_to_obstacles.py" output="screen">
+        <param name="version" value="$(arg version)"/>
     </node>
 </launch>

@@ -1,279 +1,290 @@
-#!/usr/bin/env python
-#-*- coding: utf-8 -*-
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+  ▸ /raw_obstacles_static  : 장애물(같은 차선) 수신
+  ▸ /xycar_motor_static    : 차선 변경용 스티어/속도 퍼블리시
+  ▸ 로직 :  L(주행) → C(차선 변경) → L
+            C 상태에선 고정조향 ±STEER_CMD 를 CHANGE_FRAMES 만큼 유지
+"""
 
-import rospy
+import rospy, math
 from obstacle_detector.msg import Obstacles
 from std_msgs.msg import Float64, String
 from xycar_msgs.msg import xycar_motor
 
-class Obstacle:
-    def __init__(self, x=None, y=None, distance=None):
-        self.x = x
-        self.y = y
-        self.distance = distance
+# ────────── 차선·ROI 파라미터 ──────────
+LANE_HALF      = 0.6   # [m] 차선 중앙에서 y±0.6 이내가 “현재 차선”
+ROI_X_MAX      = 8.0   # [m] 전방 장애물 감지 범위
 
+# ────────── 차선 변경 파라미터 ──────────
+STEER_CMD      = 25.0  # [deg] 변경할 때 고정 스티어
+CHANGE_FRAMES  = 15    # [loops] ≈ 15/30Hz = 0.5 s
+SPEED_CRUISE   = 30     # [km/h] 평상시
+SPEED_CHANGE   = 5     # [km/h] 차선 변경 시
 
-class StaticAvoidance():
+class Obstacle:                    # 간편 구조체
+    def __init__(self,x=None,y=None,dist=None):
+        self.x,self.y,self.dist = x,y,dist
+
+class StaticAvoidance:
     def __init__(self):
+        # ── ROS I/O ──
         rospy.Subscriber("/raw_obstacles_static", Obstacles, self.obstacleCB)
-        rospy.Subscriber("/heading", Float64, self.headingCB)
-        rospy.Subscriber("/mode", String, self.modeCB)
+        rospy.Subscriber("/heading",  Float64,  self.headingCB)  # 유지-호환
+        self.pub = rospy.Publisher("/xycar_motor_static",
+                                   xycar_motor, queue_size=1)
 
-
-
-        self.ctrl_cmd_pub = rospy.Publisher('/xycar_motor_static', xycar_motor, queue_size=1)
-        self.ctrl_cmd_msg = xycar_motor()
-
-        # self.state
-        # L: Lane
-        # A: Avoid
-        # R: Return
-        self.state = 'L'
-
-        self.obstacles = []
-        self.is_static = False
-        self.steer = 0
-        self.speed = 0
-        self.is_left = False
-
-        self.closest_obstacle = Obstacle()
-
-        # self.distance_threshold = 0.45
-        self.distance_threshold = 1.2       # 정적 회피 시작거리 
-        self.distance_threshold_max = 1.25   # 정적 회피중 다른 장애물과의 구분을 위한 임계점
-        self.margin_y = 0.4
-
-        self.angle = 0
-        self.prev_angle = 0
-
-
-        self.steer_right_time = 0
-        self.steer_left_time = 0
-        self.final_adjust_time = 0
-
-
-        self.static_obstacle_cnt = 0
-        self.static_obstacle_cnt_threshold = 15
-        self.frames_without_obstacle = 0
-        self.allowed_frames_without_obstacle = 5
-
-        self.real_heading = None
-        self.gt_heading = None
-
-        self.avoid_heading = None
-        self.return_heading = None
-
-        self.local_heading = None
-
-        self.last_n_obstacles_y = []
-        self.len_last_n_obstacles_y = 5
-        # self.avg_y = None
-
-        self.mode = ''
-
-        self.version = rospy.get_param('~version', 'safe')
-        self.direction = rospy.get_param('~direction', 'left')
-
-        if self.version == 'fast':
-            self.speed = 7 # 일단
-        else:
-            self.speed = 7
-
-        rospy.loginfo(f"STATIC: {self.version}")
-
-        
+        self.cmd   = xycar_motor()
+        self.lane  = "LEFT"      # 시작 차선
+        self.state = "L"         # FSM: L 주행 / C 변경
+        self.dir   = None        # 이번에 꺾을 방향
+        self.counter_change = 0  # C 단계 남은 frame 수
+        self.obs = []
 
         rate = rospy.Rate(30)
         while not rospy.is_shutdown():
-
-            if self.mode == 'RUBBERCONE' or self.mode == 'AR':
-                continue
-
-
-
-            if len(self.obstacles) > 0:
-                # 특정 roi에 인지가 들어오면 일단 감속
-                for obstacle in self.obstacles:
-                    
-                    if (0 < obstacle.x < 1.2) and (-0.25 <= obstacle.y <= 0.25):
-                        self.static_obstacle_cnt += 1
-                        self.update_last_n_obstacles_y(obstacle.y, self.len_last_n_obstacles_y)
-                        #print(f"거리: {self.obstacles[0].distance:.4f}")
-                        self.frames_without_obstacle = 0
-                        break
-                else:
-                    self.frames_without_obstacle += 1
-                    if self.frames_without_obstacle > self.allowed_frames_without_obstacle:
-                        # print('장애물이 없어져 카운트 감소 중...111')
-                        self.static_obstacle_cnt -= 1
-                    #self.static_obstacle_cnt -= 1
-            else:  
-                self.frames_without_obstacle += 1
-                if self.frames_without_obstacle > self.allowed_frames_without_obstacle:
-                    # print('장애물이 없어져 카운트 감소 중...222')
-                    self.static_obstacle_cnt -= 1
-                #self.static_obstacle_cnt -= 1
-
-            # 완전히 차선 폭에 들어오는 장애물이 몇번 연속으로 찍힌다? cnt++ -> 특정 숫자 이상이면 그러면 아예 정적 모드
-            # 하지만 계속 안들어오면 비례하게 cnt--
-
-            if self.static_obstacle_cnt < 0:
-                self.static_obstacle_cnt = 0
-            elif self.static_obstacle_cnt > self.static_obstacle_cnt_threshold:
-                self.static_obstacle_cnt = self.static_obstacle_cnt_threshold
-
-
-            if self.state == 'L':
-                if self.static_obstacle_cnt == self.static_obstacle_cnt_threshold:
-
-                    # self.avg_y = sum(self.last_n_obstacles_y) / len(self.last_n_obstacles_y)
-                    # 가운데 : 0.039
-                    # 왼쪽   : 0.149, 0.147
-
-                    # gt heading
-                    self.gt_heading = self.real_heading
-
-                    # 장애물의 위치가 중간 or 오른쪽 -> 왼쪽으로 회피
-                    if self.direction == 'left': # -> 장애물의 위치 기반 방향 선택
-                        self.avoid_heading = 30
-                        self.return_heading = -20
-
-                    # 장애물의 위치가 왼쪽 -> 오른쪽으로 회피 
-                    else:
-                        # 잘 되지만 크게 피함
-                        # self.avoid_heading = -27.5
-                        # self.return_heading = 20
-
-
-                        if self.version == 'fast':
-                            self.avoid_heading = -25
-                            self.return_heading = 10
-                        else:
-                            self.avoid_heading = -25
-                            self.return_heading = 10
-
-
-
-                    # flag
-                    self.state = 'A'
-                    self.is_static = True
-
-            elif self.state == 'A':
-                if self.local_heading != None:
-
-                    # 장애물의 위치가 중간 or 오른쪽 -> 왼쪽으로 회피
-                    if self.direction == 'left': # -> 장애물의 위치 기반 방향 선택
-                        if (self.avoid_heading > self.local_heading): # 목표 heading에 도달하지 못했으면 좌조향
-                            self.angle = -13.5 * abs(self.local_heading - self.avoid_heading)
-                        else:
-                            self.state = 'R'
-
-                    # 장애물의 위치가 왼쪽 -> 오른쪽으로 회피 
-                    else :
-                        if (self.avoid_heading < self.local_heading): # 목표 heading에 도달하지 못했으면 우조향
-                            self.angle = 2 * abs(self.local_heading - self.avoid_heading)
-                        else:
-                            self.state = 'R'
-
-            elif self.state == 'R':
-
-                if self.local_heading != None:
-                    
-                    # 장애물의 위치가 중간 or 오른쪽 -> 왼쪽으로 회피 -> 오른쪽 복귀
-                    if self.direction == 'left': # -> 장애물의 위치 기반 방향 선택
-
-                        if (self.return_heading < self.local_heading): # 목표 heading에 도달하지 못했으면 우조향
-                            self.angle = 1 * abs(self.local_heading - self.return_heading)
-                        else:
-                            self.state = 'L'
-                            self.gt_heading = None
-                            self.avoid_heading = None
-                            self.return_heading = None
-                            self.static_obstacle_cnt = 0
-                            self.is_static = False
-
-                    # 장애물의 위치가 왼쪽 -> 오른쪽으로 회피 -> 왼쪽 복귀
-                    else:
-                        if (self.return_heading > self.local_heading): # 목표 heading에 도달하지 못했으면 좌조향
-                            self.angle = -1 * abs(self.local_heading - self.return_heading)
-                        else:
-                            self.state = 'L'
-                            self.gt_heading = None
-                            self.avoid_heading = None
-                            self.return_heading = None
-                            self.static_obstacle_cnt = 0
-                            self.is_static = False
-            
-
-            # 정적 모드를 들어감과 동시에 현재의 heading을 gt heading으로 정하기. 
-            
-            # 일정 기준 heading을 달성할 때 까지 오른쪽으로 쭉 가기 
-
-            # 다시 일정 기준 heading을 만족하도록 돌아오게 하기. 
-
-
-            # rospy.loginfo(f"STATE: {self.state}")
-            # rospy.loginfo(f"COUNT: {self.static_obstacle_cnt}")
-            # rospy.loginfo(f"GT: {self.gt_heading}")
-            # rospy.loginfo(f"AVOID: {self.avoid_heading}")
-            # rospy.loginfo(f"RETURN: {self.return_heading}")
-
-
-
-
-            self.publishCtrlCmd(self.speed, self.angle, self.is_static)
-
-
-            # self.static_pub.publish(self.steer)
+            self.step()
             rate.sleep()
-                        
 
-    def obstacleCB(self, msg):
-        self.obstacles = []
-        for circle in msg.circles:
-            x = circle.center.x
-            y = circle.center.y
-            distance = (x**2 + y**2) ** 0.5  # 유클리드 거리 계산
-            obstacle = Obstacle(x, y, distance)
-            self.obstacles.append(obstacle)
-        
-        self.obstacles.sort(key=lambda obs: obs.distance)
+    # ────────── 매 루프 처리 ──────────
+    def step(self):
+        if self.state == "L":                 # 정상 주행
+            if self.detect_in_lane():         # 같은 차선 장애물?
+                self.start_change()
+            self.publish(SPEED_CRUISE, 0.0, False)
 
-        if len(self.obstacles) > 0:
-            self.closest_obstacle = self.obstacles[0]
-        else:
-            self.closest_obstacle = Obstacle()
+        elif self.state == "C":               # 차선 변경 중
+            steer = -STEER_CMD if self.dir=="RIGHT" else STEER_CMD
+            self.publish(SPEED_CHANGE, steer, True)
+            self.counter_change -= 1
+            if self.counter_change <= 0:      # 타이머 끝 → 직진
+                self.finish_change()
 
-    def headingCB(self, msg):
-        self.real_heading = msg.data
-        if self.gt_heading != None:
-            self.local_heading = self.real_heading - self.gt_heading
-            if self.local_heading > 180:
-                self.local_heading -= 360
-            elif self.local_heading < -180:
-                self.local_heading += 360
-        else:
-            self.local_heading = None
+    # ────────── 차선 변경 개시 ──────────
+    def start_change(self):
+        self.dir = "RIGHT" if self.lane=="LEFT" else "LEFT"
+        self.counter_change = CHANGE_FRAMES
+        self.state = "C"
+        rospy.loginfo(f"[AVOID] change to {self.dir}")
 
-    def modeCB(self, msg):
-        self.mode = msg.data
+    # ────────── 차선 변경 완료 ──────────
+    def finish_change(self):
+        self.state = "L"
+        self.lane  = "RIGHT" if self.lane=="LEFT" else "LEFT"
+        self.dir   = None
+        rospy.loginfo(f"[AVOID] lane={self.lane}  straight ahead")
+
+    # ────────── 같은 차선 장애물 유무 ──────────
+    def detect_in_lane(self):
+        for ob in self.obs:
+            if not (0 < ob.x < ROI_X_MAX):          # 전방 범위
+                continue
+            if self.lane=="LEFT"  and 0.0 <= ob.y <= LANE_HALF:
+                return True
+            if self.lane=="RIGHT" and -LANE_HALF <= ob.y <= 0.0:
+                return True
+        return False
+
+    # ────────── 콜백 ──────────
+    def obstacleCB(self,msg):
+        self.obs=[Obstacle(c.center.x, c.center.y,
+                           math.hypot(c.center.x,c.center.y))
+                  for c in msg.circles]
+
+    def headingCB(self,msg): pass                 # 호환용, 미사용
+
+    # ────────── 퍼블리시 ──────────
+    def publish(self,spd,ang,flag):
+        self.cmd.speed = round(spd)
+        self.cmd.angle = round(ang)
+        self.cmd.flag  = flag         # True: 회피 중
+        self.pub.publish(self.cmd)
+
+# ────────── 실행 ──────────
+if __name__ == "__main__":
+    rospy.init_node("static_obstacle_avoidance", anonymous=True)
+    try:  StaticAvoidance()
+    except rospy.ROSInterruptException:  pass
 
 
-    def update_last_n_obstacles_y(self, y, n):
-        self.last_n_obstacles_y.append(y)
-        if len(self.last_n_obstacles_y) > n:
-            self.last_n_obstacles_y.pop(0)
+# #!/usr/bin/env python3
+# # -*- coding: utf-8 -*-
 
-    def publishCtrlCmd(self, motor_msg, servo_msg, flag):
-        self.ctrl_cmd_msg.speed = round(motor_msg)  # 모터 속도 설정
-        self.ctrl_cmd_msg.angle = round(servo_msg)  # 조향각 설정
-        self.ctrl_cmd_msg.flag = flag
-        self.ctrl_cmd_pub.publish(self.ctrl_cmd_msg)  # 명령 퍼블리시
+# import rospy, math
+# from obstacle_detector.msg import Obstacles
+# from std_msgs.msg import Float64, String
+# from xycar_msgs.msg import xycar_motor
 
+# LANE_HALF   = 0.6   # [m]  현 차선 y 범위 (센터±0.6)
+# ROI_X_MAX   = 10.0   # [m]  전방 거리 한계
 
-if __name__ == '__main__':
-    rospy.init_node('static_obstacle_avoidance', anonymous=True)
-    try:
-        static_obstacle_avoidance = StaticAvoidance()
-    except rospy.ROSInterruptException:
-        pass
+# class Obstacle:
+#     def __init__(self, x=None, y=None, dist=None):
+#         self.x, self.y, self.dist = x, y, dist
+
+# class StaticAvoidance:
+#     def __init__(self):
+#         # ────── ROS I/O ──────
+#         rospy.Subscriber("/raw_obstacles_static", Obstacles, self.obstacleCB)
+#         rospy.Subscriber("/heading",              Float64,   self.headingCB)
+#         rospy.Subscriber("/mode",                 String,    self.modeCB)
+
+#         self.pub = rospy.Publisher("/xycar_motor_static",
+#                                    xycar_motor, queue_size=1)
+#         self.cmd = xycar_motor()
+
+#         # ────── 상태 변수 ──────
+#         self.state = "L"          # FSM: L 주행 / A 회피 / R 복귀
+#         self.lane  = "LEFT"       # ← 내부에서만 관리, 초기값 LEFT
+#         self.dir   = None         # 이번 회피 방향 "LEFT"/"RIGHT"
+
+#         # 주행 파라미터
+#         self.speed = 5
+#         self.angle = 0
+
+#         # 헤딩 관리
+#         self.real_hd = None
+#         self.gt_hd   = None
+#         self.local_hd= None
+#         self.avoid_hd= None
+#         self.return_hd=None
+
+#         # 장애물·카운터
+#         self.obs = []
+#         self.closest = Obstacle()
+#         self.cnt, self.miss = 0, 0
+#         self.CNT_MAX  = 10
+#         self.MISS_MAX = 5
+
+#         rate = rospy.Rate(30)
+#         while not rospy.is_shutdown():
+#             self.fsm_step()
+#             self.publish(self.speed, self.angle, self.state != "L")
+#             rate.sleep()
+
+#     # ────────── FSM ──────────
+#     def fsm_step(self):
+#         self.update_counter()
+#         if self.state == "L" and self.cnt >= self.CNT_MAX:
+#             self.start_avoid()
+#         elif self.state == "A":
+#             self.do_avoid()
+#         elif self.state == "R":
+#             self.do_return()
+
+#     # ────────── 회피 시작 ──────────
+#     def start_avoid(self):
+#         self.gt_hd = self.real_hd
+
+#         if self.lane == "LEFT":           # 현재 왼쪽 → 오른쪽으로 피하기
+#             self.dir   = "RIGHT"
+#             self.avoid_hd, self.return_hd = -25.0, 10.0
+#         else:                             # 현재 오른쪽 → 왼쪽으로 피하기
+#             self.dir   = "LEFT"
+#             self.avoid_hd, self.return_hd = 30.0, -20.0
+
+#         self.state = "A"
+#         rospy.loginfo(f"[STATIC] AVOID start, dir={self.dir}")
+
+#     # ────────── A 상태 ──────────
+#     def do_avoid(self):
+#         if self.local_hd is None: return
+#         if self.dir == "RIGHT":
+#             if self.local_hd > self.avoid_hd:
+#                 self.angle = 1.8 * (self.local_hd - self.avoid_hd)
+#             else:
+#                 self.state = "R"
+#         else:  # LEFT
+#             if self.local_hd < self.avoid_hd:
+#                 self.angle = -13.5 * abs(self.local_hd - self.avoid_hd)
+#             else:
+#                 self.state = "R"
+
+#     # ────────── R 상태 ──────────
+#     def do_return(self):
+#         if self.local_hd is None: return
+#         if self.dir == "RIGHT":  # 복귀는 좌로
+#             if self.local_hd < self.return_hd:
+#                 self.angle = -1.0 * abs(self.local_hd - self.return_hd)
+#             else:
+#                 self.finish_avoid()
+#         else:                    # 복귀는 우로
+#             if self.local_hd > self.return_hd:
+#                 self.angle = 1.0 * abs(self.local_hd - self.return_hd)
+#             else:
+#                 self.finish_avoid()
+
+#     # ────────── 복귀 완료 ──────────
+#     def finish_avoid(self):
+#         self.state = "L"
+#         # ▸ 차선 정보 토글
+#         self.lane = "RIGHT" if self.lane == "LEFT" else "LEFT"
+#         # 변수 초기화
+#         self.dir = self.gt_hd = self.avoid_hd = self.return_hd = None
+#         self.cnt = 0
+#         rospy.loginfo(f"[STATIC] RETURN done → lane={self.lane}")
+
+#     # # ────────── 카운터 관리 ──────────
+#     # def update_counter(self):
+#     #     in_roi = any(0 < ob.x < self.roi_x_max and abs(ob.y) <= self.roi_y
+#     #                  for ob in self.obs)
+#     #     if in_roi:
+#     #         self.cnt = min(self.CNT_MAX, self.cnt + 1); self.miss = 0
+#     #     else:
+#     #         self.miss += 1
+#     #         if self.miss > self.MISS_MAX:
+#     #             self.cnt = max(0, self.cnt - 1)
+
+#     def update_counter(self):
+#         def in_my_lane(ob):
+#             if not (0 < ob.x < ROI_X_MAX):          # 전방 거리 조건
+#                 return False
+#             # y 부호로 현재 차선 구분 (y+:좌, y-:우)
+#             if self.lane == "LEFT":
+#                 return 0.0 <= ob.y <= LANE_HALF
+#             else:  # RIGHT
+#                 return -LANE_HALF <= ob.y <= 0.0
+
+#         in_roi = any(in_my_lane(ob) for ob in self.obs)
+
+#         if in_roi:
+#             self.cnt  = min(self.CNT_MAX, self.cnt + 1)
+#             self.miss = 0
+#         else:
+#             self.miss += 1
+#             if self.miss > self.MISS_MAX:
+#                 self.cnt = max(0, self.cnt - 1)
+
+#     # ────────── 콜백 ──────────
+#     def obstacleCB(self, msg):
+#         self.obs = [Obstacle(c.center.x, c.center.y,
+#                              math.hypot(c.center.x, c.center.y))
+#                     for c in msg.circles]
+#         self.obs.sort(key=lambda o: o.dist)
+#         self.closest = self.obs[0] if self.obs else Obstacle()
+
+#     def headingCB(self, msg):
+#         self.real_hd = msg.data
+#         if self.gt_hd is not None:
+#             self.local_hd = self.real_hd - self.gt_hd
+#             if self.local_hd > 180:   self.local_hd -= 360
+#             elif self.local_hd < -180:self.local_hd += 360
+#         else:
+#             self.local_hd = None
+
+#     def modeCB(self, msg): self.mode = msg.data
+
+#     # ────────── 모터 퍼블리시 ──────────
+#     def publish(self, spd, ang, flag):
+#         self.cmd.speed = round(spd)
+#         self.cmd.angle = round(ang)
+#         self.cmd.flag  = flag
+#         self.pub.publish(self.cmd)
+
+# # ────────── 실행 ──────────
+# if __name__ == "__main__":
+#     rospy.init_node("static_obstacle_avoidance", anonymous=True)
+#     try:
+#         StaticAvoidance()
+#     except rospy.ROSInterruptException:
+#         pass
