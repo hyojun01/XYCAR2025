@@ -11,19 +11,19 @@ class SlideWindow:
     def __init__(self):
         self.current_line = "DEFAULT"
 
-        self.x_previous = 260
+        self.x_previous = 320
 
     def slidewindow(self, img):
         # --------------------------------------------------------------------
         # 1) 끊어진 노란선 연결: '세로 방향'으로 20 픽셀 정도 메워 주는 구조 요소
-        vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 100))
-        img_closed = cv2.morphologyEx(img, cv2.MORPH_CLOSE, vert_kernel)
+        # vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 100))
+        # img_closed = cv2.morphologyEx(img, cv2.MORPH_CLOSE, vert_kernel)
 
         # --------------------------------------------------------------------
         # 2) 히스토그램 기반 초기 차선 기준점 찾기
-        height, width = img_closed.shape
+        height, width = img.shape
         # 바닥 절반 영역을 합산한 히스토그램
-        histogram = np.sum(img_closed[height//2 : , :], axis=0)
+        histogram = np.sum(img[height//2 : , :], axis=0)
         # # 바닥 전체 영역을 합산한 히스토그램
         # histogram = np.sum(img_closed[height : , :], axis=0)
         mid = width // 2
@@ -34,11 +34,11 @@ class SlideWindow:
         # 3) sliding window 파라미터
         nwindows = 14
         window_height = height // nwindows
-        margin = 20
-        minpix = 10
+        margin = 40
+        minpix = 80
 
         # nonzero 픽셀 좌표
-        nonzero    = img_closed.nonzero()
+        nonzero    = img.nonzero()
         nonzeroy   = np.array(nonzero[0])
         nonzerox   = np.array(nonzero[1])
 
@@ -46,14 +46,14 @@ class SlideWindow:
         left_lane_inds  = []
         right_lane_inds = []
 
-        out_img = np.dstack((img_closed,)*3) * 255
+        out_img = np.dstack((img,)*3) * 255
 
         # --------------------------------------------------------------------
         # 4) 각 윈도우별로 차선 픽셀 찾기
         for window in range(nwindows):
             # 윈도우 y 범위
-            win_y_low  = height - (window+1)*window_height
-            win_y_high = height -  window    *window_height
+            win_y_low  = (window)*window_height
+            win_y_high = (window+1)*window_height
 
             # 왼쪽 윈도우 x 범위
             win_x_low_left  = x_current_left  - margin

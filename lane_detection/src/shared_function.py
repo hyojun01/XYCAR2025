@@ -3,80 +3,55 @@
 import cv2
 import numpy as np
 
-def roi_for_lane(image):
-    """이미지의 하단 부분만 사용하여 ROI를 설정하는 함수"""
-    # return image[246:396, :]
-    return image[246:396, 60:580]    
 
-def process_image(image):
-    """이미지 전처리를 수행하는 함수 (노란색·흰색 차선만)"""
-    # 1) HLS 색상 공간으로 변환 후 노란색, 흰색 마스크 생성
-    hls = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-    # 노란색 범위 (H:15–35, L:30–204, S:115–255)
-    lower_yellow = np.array([15,  30, 115])
-    upper_yellow = np.array([35, 204, 255])
-    yellow_mask = cv2.inRange(hls, lower_yellow, upper_yellow)
-    # 흰색 범위 (H:0–255, L:200–255, S:0–255)
-    lower_white = np.array([  0, 200,   0])
-    upper_white = np.array([255, 255, 255])
-    white_mask = cv2.inRange(hls, lower_white, upper_white)
-    # 둘을 합친 마스크로 원본 이미지 필터링
-    mask = cv2.bitwise_or(yellow_mask, white_mask)
-    masked = cv2.bitwise_and(image, image, mask=mask)
-
-    # 2) 그레이스케일 변환
-    gray_img = cv2.cvtColor(masked, cv2.COLOR_BGR2GRAY)
-
-    # 트랙바에서 가져온 현재 값들
-    gaussian_kernel_size      = 13
-    canny_lower, canny_upper = 33, 255
-    morph_kernel_size        = 1
-
-    # 3) 가우시안 블러 (노이즈 제거)
-    blurred_image = cv2.GaussianBlur(gray_img,
-                                     (gaussian_kernel_size, gaussian_kernel_size),
-                                     0)
-
-    # 4) 캐니 에지 검출
-    edged = cv2.Canny(blurred_image, canny_lower, canny_upper)
-
-    # 5) 형태학적 닫기 연산 (엣지 연결)
-    kernel = np.ones((morph_kernel_size, morph_kernel_size), np.uint8)
-    closed_image = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
-
-    return gray_img, blurred_image, mask, edged, closed_image
-
-def warper(image):
-    """원근 변환을 수행하는 함수"""
-    y, x = image.shape[0:2]
-
-    # src_point1 = [0, 126]  # 왼쪽 아래 점
-    # src_point2 = [175, 46]  # 왼쪽 위 점
-    # src_point3 = [456, 38]  # 오른쪽 위 점
-    # src_point4 = [640, 103]  # 오른쪽 아래 점
-
-    # src_points = np.float32([src_point1, src_point2, src_point3, src_point4])  # 원본 이미지에서의 점들
-
-    src_point1 = [0 * x, 0.84 * y]  # 왼쪽 아래 점
-    src_point2 = [0.273 * x, 0.306 * y]  # 왼쪽 위 점
-    src_point3 = [0.712 * x, 0.253 * y]  # 오른쪽 위 점
-    src_point4 = [1 * x, 0.686 * y]  # 오른쪽 아래 점
-
-    src_points = np.float32([src_point1, src_point2, src_point3, src_point4])  # 원본 이미지에서의 점들
+def roi_for_lane(img, vert_ratio=0.4):
+    """
+    이미지의 아래쪽 일부(차선이 주로 보이는 영역)만 남기고 나머지는 제거합니다.
+    vert_ratio: ROI 윗선이 이미지 높이의 몇 %에 위치할지 (0~1)
+    """
+    h, w = img.shape[:2]
     
-    # dst_point1 = [x // 4 + 9, y]  # 변환 이미지에서의 왼쪽 아래 점
-    # dst_point2 = [x // 4 + 9, 0]  # 변환 이미지에서의 왼쪽 위 점
-    # dst_point3 = [x // 4 * 3 + 9, 0]  # 변환 이미지에서의 오른쪽 위 점
-    # dst_point4 = [x // 4 * 3 + 9, y]  # 변환 이미지에서의 오른쪽 아래 점
-
-    dst_point1 = [x // 4, y]  # 변환 이미지에서의 왼쪽 아래 점
-    dst_point2 = [x // 4, 0]  # 변환 이미지에서의 왼쪽 위 점
-    dst_point3 = [x // 4 * 3, 0]  # 변환 이미지에서의 오른쪽 위 점
-    dst_point4 = [x // 4 * 3, y]  # 변환 이미지에서의 오른쪽 아래 점
-
-    dst_points = np.float32([dst_point1, dst_point2, dst_point3, dst_point4])  # 변환 이미지에서의 점들
+    # ROI의 시작 y 좌표 계산
+    roi_top_y = int(h * vert_ratio)
     
-    matrix = cv2.getPerspectiveTransform(src_points, dst_points)  # 원근 변환 행렬 계산
-    warped_img = cv2.warpPerspective(image, matrix, (x, y))  # 원근 변환 적용
+    # 이미지를 ROI에 맞게 자르기
+    # y좌표는 roi_top_y 부터 h (이미지 끝)까지, x좌표는 전체
+    cropped_img = img[roi_top_y:h, :]
     
-    return warped_img
+    return cropped_img
+
+
+def process_image(img):
+    """
+    RGB → HLS 변환 후 흰색·노란색 차선만 남겨 0/1 이진 이미지로 반환합니다.
+    """
+    hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+
+    # 노란색 범위 (H≈15~35°, S/L 적당)
+    lower_yellow = np.array([15, 30,  90])
+    upper_yellow = np.array([35, 200, 255])
+    mask_yellow = cv2.inRange(hls, lower_yellow, upper_yellow)
+
+    # 흰색 범위 (L 밝고 S 작음)
+    lower_white = np.array([0, 200, 0])
+    upper_white = np.array([255, 255, 120])
+    mask_white = cv2.inRange(hls, lower_white, upper_white)
+
+    mask = cv2.bitwise_or(mask_yellow, mask_white)
+
+    # 노이즈 제거 & 팽창/침식
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    binary = mask // 255  # 0/1 로 변환
+    return binary.astype(np.uint8)
+
+
+def warper(img, src_pts, dst_pts, out_size=(640, 480)):
+    """
+    src_pts (4×2): 원본 이미지의 트랩이즈(주로 ROI 내부 도로 영역) 꼭짓점
+    dst_pts (4×2): 변환 후 평행사변형 → 직사각형이 되도록 배치
+    """
+    M = cv2.getPerspectiveTransform(np.float32(src_pts), np.float32(dst_pts))
+    warped = cv2.warpPerspective(img, M, out_size, flags=cv2.INTER_LINEAR)
+    return warped
