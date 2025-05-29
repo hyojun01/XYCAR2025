@@ -23,6 +23,8 @@ K_ADAPT            = 1.8         # adaptive 계수 (1.3~2.0)
 MIN_CLUSTER_SIZE   = 3           # ≥3 점이면 장애물로 인정
 PUB_HZ             = 15          # 퍼블리시 주기 [Hz]
 
+
+MIN_RADIUS         = 0.3         # 장애물 최소 반지름 [m] (라바콘 등 필터링)
 class Lidar2Obstacles:
     def __init__(self):
         rospy.init_node("lidar_to_obstacles", anonymous=True)
@@ -32,8 +34,7 @@ class Lidar2Obstacles:
                                         Obstacles, queue_size=1)
         self.pub_dist = rospy.Publisher("/front_obstacle_distance",
                                         Float64,   queue_size=1)
-        rospy.Subscriber("/scan", LaserScan,
-                         self.scan_cb, queue_size=1)
+        rospy.Subscriber("/scan", LaserScan, self.scan_cb, queue_size=1)
 
         rate = rospy.Rate(PUB_HZ)
         while not rospy.is_shutdown():
@@ -89,6 +90,9 @@ class Lidar2Obstacles:
             if abs(center[1]) > LANE_HALF_WIDTH:
                 continue
             rad = np.max(np.linalg.norm(c - center, axis=1))
+            if rad < MIN_RADIUS:  #  라바콘 등 작은 물체 필터링
+                continue
+
             circ = CircleObstacle()
             circ.center      = Point(center[0], center[1], 0.0)
             circ.velocity    = Vector3()     # 정적 (0,0,0)
@@ -104,7 +108,6 @@ class Lidar2Obstacles:
         obs_msg.header.stamp    = rospy.Time.now()
         obs_msg.header.frame_id = scan.header.frame_id
         obs_msg.circles         = circles
-
         return obs_msg, d_min
 
 

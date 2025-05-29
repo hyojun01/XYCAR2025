@@ -80,7 +80,8 @@ class LaneDetection(object):
                 self.pid = PID(0.78, 0.0005, 0.405) # 0828 아침 잘되는버전
             else:
                 # self.pid = PID(0.7, 0.0008, 0.15)
-                self.pid = PID(0.58, 0.0005, 0.305) # 0828 아침 잘되는버전
+                # self.pid = PID(0.58, 0.0005, 0.305) # 0828 아침 잘되는버전
+                self.pid = PID(0.78, 0.0005, 0.405) # 0828 아침 잘되는버전
 
             self.cv_image = None  # 카메라 이미지 초기화
             

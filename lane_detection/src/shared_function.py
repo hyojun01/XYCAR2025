@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 
-def roi_for_lane(img, vert_ratio=0.4):
+def roi_for_lane(img, vert_ratio=0.3):
     """
     이미지의 아래쪽 일부(차선이 주로 보이는 영역)만 남기고 나머지는 제거합니다.
     vert_ratio: ROI 윗선이 이미지 높이의 몇 %에 위치할지 (0~1)
@@ -13,10 +13,11 @@ def roi_for_lane(img, vert_ratio=0.4):
     
     # ROI의 시작 y 좌표 계산
     roi_top_y = int(h * vert_ratio)
+    roi_bottom_y = roi_top_y + 240
     
     # 이미지를 ROI에 맞게 자르기
     # y좌표는 roi_top_y 부터 h (이미지 끝)까지, x좌표는 전체
-    cropped_img = img[roi_top_y:h, :]
+    cropped_img = img[roi_top_y:roi_bottom_y, :]
     
     return cropped_img
 

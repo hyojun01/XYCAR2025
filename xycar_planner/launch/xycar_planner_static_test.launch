@@ -6,7 +6,11 @@
   <include file="$(find heading)/launch/imu_heading.launch"/>
 
   <!-- 정적 장애물 주행 로직 진행 -->
-  <!-- <include file="$(find obstacle_detector)/launch/static_obstacle.launch"/> -->
+  <!-- <include file="$(find obstacle_detector)/launch/rubbercone_obstacle.launch"/> -->
+
+  <include file="$(find cv_detect)/launch/traffic_detection.launch"/>
+
+  <include file="$(find obstacle_detector)/launch/static_obstacle.launch"/>
   
   <node name="xycar_planner" pkg="xycar_planner" type="xycar_planner_static_test.py" output="screen"/>
   

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 from __future__ import print_function
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
@@ -9,16 +8,18 @@ import numpy as np
 from shared_function import *
 
 from std_msgs.msg import Int64MultiArray
-
+from std_msgs.msg import Int64
+threshold_pixel_min = 5000
+isgreen = False
 class TrafficDetection:
     def __init__(self):
         rospy.init_node('traffic_detection', anonymous=True)
-
+        self.isgreen = False
         try:
             self.bridge = CvBridge()
 
             rospy.Subscriber("/usb_cam/image_raw", Image, self.cameraCB)
-            self.traffic_light_pub = rospy.Publisher("/traffic_light", Int64MultiArray, queue_size=1)
+            self.traffic_light_pub = rospy.Publisher("/traffic_light", Int64, queue_size=1)
             self.red_center_pub = rospy.Publisher("/red_center", Int64MultiArray, queue_size=1)
             self.green_center_pub = rospy.Publisher("/green_center", Int64MultiArray, queue_size=1)
 
@@ -26,7 +27,7 @@ class TrafficDetection:
             self.cv_image = None
 
             # 트랙바 윈도우 생성
-            cv2.namedWindow('Red Trackbars')
+            """cv2.namedWindow('Red Trackbars')
             cv2.createTrackbar('H_min_red1', 'Red Trackbars', 0, 179, self.nothing)
             cv2.createTrackbar('H_max_red1', 'Red Trackbars', 179, 179, self.nothing)
             cv2.createTrackbar('S_min_red1', 'Red Trackbars', 0, 255, self.nothing)
@@ -40,7 +41,7 @@ class TrafficDetection:
             cv2.createTrackbar('S_min_green1', 'Green Trackbars', 0, 255, self.nothing)
             cv2.createTrackbar('S_max_green1', 'Green Trackbars', 180, 255, self.nothing)
             cv2.createTrackbar('V_min_green1', 'Green Trackbars', 160, 255, self.nothing)
-            cv2.createTrackbar('V_max_green1', 'Green Trackbars', 255, 255, self.nothing)
+            cv2.createTrackbar('V_max_green1', 'Green Trackbars', 255, 255, self.nothing)"""
 
             rate = rospy.Rate(30)
             while not rospy.is_shutdown():
@@ -62,7 +63,7 @@ class TrafficDetection:
             rospy.logwarn(e)
 
 
-    def filter_circular_contours(self, contours, circularity_threshold=0.7, min_area=150):
+    def filter_circular_contours(self, contours, circularity_threshold=0.2, min_area=100):
         filtered_contours = []
         filtered_contours_circularity = []
         filtered_contours_area = []
@@ -78,7 +79,7 @@ class TrafficDetection:
                 filtered_contours_area.append(area)
 
         return filtered_contours, filtered_contours_area, filtered_contours_circularity
-
+    
     def get_contour_centers(self, contours):
         centers = []
         for contour in contours:
@@ -97,21 +98,32 @@ class TrafficDetection:
 
 
         # Red trackbar values
-        h_min_red1 = cv2.getTrackbarPos('H_min_red1', 'Red Trackbars')
-        h_max_red1 = cv2.getTrackbarPos('H_max_red1', 'Red Trackbars')
-        s_min_red1 = cv2.getTrackbarPos('S_min_red1', 'Red Trackbars')
-        s_max_red1 = cv2.getTrackbarPos('S_max_red1', 'Red Trackbars')
-        v_min_red1 = cv2.getTrackbarPos('V_min_red1', 'Red Trackbars')
-        v_max_red1 = cv2.getTrackbarPos('V_max_red1', 'Red Trackbars')
+        #h_min_red1 = cv2.getTrackbarPos('H_min_red1', 'Red Trackbars')
+        h_min_red1 = 161
+        #h_max_red1 = cv2.getTrackbarPos('H_max_red1', 'Red Trackbars')
+        h_max_red1 = 179
+        #s_min_red1 = cv2.getTrackbarPos('S_min_red1', 'Red Trackbars')
+        s_min_red1 = 100
+        #s_max_red1 = cv2.getTrackbarPos('S_max_red1', 'Red Trackbars')
+        s_max_red1 = 255
+        #v_min_red1 = cv2.getTrackbarPos('V_min_red1', 'Red Trackbars')
+        v_min_red1 = 100
+        #v_max_red1 = cv2.getTrackbarPos('V_max_red1', 'Red Trackbars')
+        v_max_red1 = 255
 
         # Green trackbar values
-        h_min_green1 = cv2.getTrackbarPos('H_min_green1', 'Green Trackbars')
-        h_max_green1 = cv2.getTrackbarPos('H_max_green1', 'Green Trackbars')
-        s_min_green1 = cv2.getTrackbarPos('S_min_green1', 'Green Trackbars')
-        s_max_green1 = cv2.getTrackbarPos('S_max_green1', 'Green Trackbars')
-        v_min_green1 = cv2.getTrackbarPos('V_min_green1', 'Green Trackbars')
-        v_max_green1 = cv2.getTrackbarPos('V_max_green1', 'Green Trackbars')
-
+        #h_min_green1 = cv2.getTrackbarPos('H_min_green1', 'Green Trackbars')
+        h_min_green1 = 41
+        #h_max_green1 = cv2.getTrackbarPos('H_max_green1', 'Green Trackbars')
+        h_max_green1 = 84
+        #s_min_green1 = cv2.getTrackbarPos('S_min_green1', 'Green Trackbars')
+        s_min_green1 = 100
+        #s_max_green1 = cv2.getTrackbarPos('S_max_green1', 'Green Trackbars')
+        s_max_green1 = 255
+        #v_min_green1 = cv2.getTrackbarPos('V_min_green1', 'Green Trackbars')
+        v_min_green1 = 100
+        #v_max_green1 = cv2.getTrackbarPos('V_max_green1', 'Green Trackbars')
+        v_max_green1 = 255
         lower_red1 = np.array([h_min_red1, s_min_red1, v_min_red1])
         upper_red1 = np.array([h_max_red1, s_max_red1, v_max_red1])
         lower_green1 = np.array([h_min_green1, s_min_green1, v_min_green1])
@@ -127,13 +139,13 @@ class TrafficDetection:
         red_filtered_contours, red_contours_area, red_contours_circularity = self.filter_circular_contours(red_contours)
         green_filtered_contours, green_contours_area, green_contours_circularity= self.filter_circular_contours(green_contours)
 
-        # rospy.loginfo(f"red_contours_area: {red_contours_area}")
-        # rospy.loginfo(f"red_contours_circularity: {red_contours_circularity}")
-        # rospy.loginfo("")
+        #rospy.loginfo(f"red_contours_area: {red_contours_area}")
+        #rospy.loginfo(f"red_contours_circularity: {red_contours_circularity}")
+        #rospy.loginfo("")
 
-        # rospy.loginfo(f"green_contours_area: {green_contours_area}")
-        # rospy.loginfo(f"green_contours_circularity: {green_contours_circularity}")
-        # rospy.loginfo("")
+        #rospy.loginfo(f"green_contours_area: {green_contours_area}")
+        #rospy.loginfo(f"green_contours_circularity: {green_contours_circularity}")
+        #rospy.loginfo("")
 
         # 빈 이미지 생성 (배경 검은색)
         red_result = np.zeros_like(red_mask)
@@ -146,8 +158,8 @@ class TrafficDetection:
         red_pixel_counts = np.count_nonzero(red_result)
         green_pixel_counts = np.count_nonzero(green_result)
 
-        # rospy.loginfo(f'red_pixel_counts: {red_pixel_counts}')
-        # rospy.loginfo(f'green_pixel_counts: {green_pixel_counts}')
+        rospy.loginfo(f'red_pixel_counts: {red_pixel_counts}')
+        rospy.loginfo(f'green_pixel_counts: {green_pixel_counts}')
 
         cv2.imshow('red_mask', red_mask)
         cv2.imshow('green_mask', green_mask)
@@ -166,12 +178,29 @@ class TrafficDetection:
         # 중심 좌표 배열로 변환
         red_centers_flattened = [coord for center in red_centers for coord in center]
         green_centers_flattened = [coord for center in green_centers for coord in center]
-
-
-        msg = Int64MultiArray()
+##########################################################
+        red_on = red_pixel_counts > threshold_pixel_min
+        green_on = green_pixel_counts > threshold_pixel_min
+        
+        if green_on and not red_on:
+            state = 2  # 초록불 감지 시 True로
+            self.isgreen = True
+        elif red_on and not green_on:
+            state = 1  # 빨간불
+            self.isgreen = False
+        else:
+            if self.isgreen == True:
+                state = 2
+            else:
+                state = 1
+        msg = Int64()
+        msg.data = state
+        self.traffic_light_pub.publish(msg)
+        #####################################################
+        """msg = Int64MultiArray()
         msg.data = [red_pixel_counts, green_pixel_counts]
 
-        self.traffic_light_pub.publish(msg)
+        self.traffic_light_pub.publish(msg)"""
 
         red_centers_msg = Int64MultiArray()
         red_centers_msg.data = red_centers_flattened
