@@ -56,7 +56,7 @@ class LaneDetection(object):
 
             self.slidewindow = SlideWindow()  # 슬라이드 윈도우 알고리즘 초기화
 
-            src_pts = np.float32([[ 2, 479],    # 좌측 하단 (약 11 % 지점)
+            src_pts = np.float32([[ 1, 479],    # 좌측 하단 (약 11 % 지점)
                       [220, 260],    # 좌측 상단 (y↑ 240 px, x≈44 %)
                       [420, 260],    # 우측 상단
                       [638, 479]])   # 우측 하단 (약 89 %)
@@ -68,7 +68,7 @@ class LaneDetection(object):
 
             self.version = rospy.get_param('~version', 'safe')
 
-            rospy.loginfo(f"LANE: {self.version}")
+            # rospy.loginfo(f"LANE: {self.version}")
 
             
             self.steer = 0.0  # 조향각 초기화
@@ -107,11 +107,12 @@ class LaneDetection(object):
                     
                     
                     self.steer = round(self.pid.pid_control(x_location - 320))  # PID 제어를 통한 각도 계산
+                    self.steer = self.steer * 0.5  # 조향각을 0.5으로 스케일링
 
                     if self.version == 'fast':
                         self.motor = 60 # 모터 속도 설정 30
                     else:
-                        self.motor = 30
+                        self.motor = 60
                     
                     self.publishCtrlCmd(self.motor, self.steer)  # 제어 명령 퍼블리시
 

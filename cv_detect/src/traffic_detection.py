@@ -158,8 +158,8 @@ class TrafficDetection:
         red_pixel_counts = np.count_nonzero(red_result)
         green_pixel_counts = np.count_nonzero(green_result)
 
-        rospy.loginfo(f'red_pixel_counts: {red_pixel_counts}')
-        rospy.loginfo(f'green_pixel_counts: {green_pixel_counts}')
+        # rospy.loginfo(f'red_pixel_counts: {red_pixel_counts}')
+        # rospy.loginfo(f'green_pixel_counts: {green_pixel_counts}')
 
         cv2.imshow('red_mask', red_mask)
         cv2.imshow('green_mask', green_mask)

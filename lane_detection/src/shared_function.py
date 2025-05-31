@@ -13,7 +13,7 @@ def roi_for_lane(img, vert_ratio=0.3):
     
     # ROI의 시작 y 좌표 계산
     roi_top_y = int(h * vert_ratio)
-    roi_bottom_y = roi_top_y + 240
+    roi_bottom_y = roi_top_y + 250
     
     # 이미지를 ROI에 맞게 자르기
     # y좌표는 roi_top_y 부터 h (이미지 끝)까지, x좌표는 전체

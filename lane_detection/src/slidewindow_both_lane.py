@@ -12,6 +12,7 @@ class SlideWindow:
         self.current_line = "DEFAULT"
 
         self.x_previous = 320
+    
 
     def slidewindow(self, img):
         # --------------------------------------------------------------------
@@ -35,7 +36,7 @@ class SlideWindow:
         nwindows = 14
         window_height = height // nwindows
         margin = 50
-        minpix = 80
+        minpix = 200
 
         # nonzero 픽셀 좌표
         nonzero    = img.nonzero()
@@ -97,8 +98,9 @@ class SlideWindow:
         #    x_location: 트래킹 포인트(예: 두 선의 중간)
 
         # 각 차선이 신뢰성 있게 감지되었는지 판단 (축적된 픽셀 수가 minpix 이상인 경우)
-        left_lane_reliably_found = len(left_lane_inds) >= minpix
-        right_lane_reliably_found = len(right_lane_inds) >= minpix
+        left_lane_reliably_found = len(good_left_inds) >= minpix
+        right_lane_reliably_found = len(good_right_inds) >= minpix
+        # print("Left lane inds:", len(good_left_inds), "Right lane inds:", len(good_right_inds))
 
         # 차선 폭 추정 (초기 히스토그램 기반, 실패 시 기본값 사용)
         hist_peak_left = np.argmax(histogram[:mid])
@@ -109,20 +111,28 @@ class SlideWindow:
         if estimated_lane_width <= margin: # margin은 윈도우 탐색 범위, 적절한 최소 차선 폭 기준으로 사용
             estimated_lane_width = int(width * 0.4) # 예: 이미지 너비의 40%
 
+        alpha = 0.4
+
         if left_lane_reliably_found and right_lane_reliably_found:
             # 양쪽 차선 모두 신뢰성 있게 감지된 경우: x_current_left와 x_current_right의 중간점
             x_location = (x_current_left + x_current_right) // 2
+            # print("Both lanes found: x_location =", x_location)
         elif left_lane_reliably_found:
             # 왼쪽 차선만 신뢰성 있게 감지된 경우: x_current_left 기준으로 설정
             # x_current_left는 왼쪽 차선의 중심이므로, 차량 경로 중심은 오른쪽으로 차선 폭의 절반 이동
-            x_location = x_current_left + estimated_lane_width // 2
+            current_x_candidate = x_current_left + estimated_lane_width // 2
+            x_location = int(alpha * current_x_candidate + (1 - alpha) * self.x_previous)
+            # print("Left lane found: x_location =", x_location)
         elif right_lane_reliably_found:
             # 오른쪽 차선만 신뢰성 있게 감지된 경우: x_current_right 기준으로 설정
             # x_current_right는 오른쪽 차선의 중심이므로, 차량 경로 중심은 왼쪽으로 차선 폭의 절반 이동
-            x_location = x_current_right - estimated_lane_width // 2
+            current_x_candidate = x_current_right - estimated_lane_width // 2
+            x_location = int(alpha * current_x_candidate + (1 - alpha) * self.x_previous)
+            # print("Right lane found: x_location =", x_location)
         else:
             # 양쪽 차선 모두 신뢰성 있게 감지되지 않은 경우: 이전 x_location 값 사용
             x_location = self.x_previous
+            # print("No lanes found, using previous x_location =", x_location)
 
         # x_location이 이미지 경계를 벗어나지 않도록 조정
         # x_location = max(0, min(x_location, width - 1))
@@ -130,6 +140,7 @@ class SlideWindow:
         cv2.circle(out_img, (x_location, height - window_height//2), 10, (0,0,255), -1)
 
         self.x_previous = x_location
+        
 
     # def slidewindow(self, img):
 

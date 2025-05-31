@@ -9,7 +9,7 @@
 
 
 import rospy, math
-from obstacle_detector.msg import Obstacles
+from obstacle_detector.msg import Obstacles, CarObstacles
 from std_msgs.msg import Float64, String
 from xycar_msgs.msg import xycar_motor
 from sensor_msgs.msg import Image
@@ -19,13 +19,13 @@ import numpy as np
 
 # ────────── 차선·ROI 파라미터 ──────────
 LANE_HALF      = 0.6   # [m] 차선 중앙에서 y±0.6 이내가 “현재 차선”
-ROI_X_MAX      = 10.0   # [m] 전방 장애물 감지 범위
+ROI_X_MAX      = 7.0   # [m] 전방 장애물 감지 범위
 
 # ────────── 차선 변경 파라미터 ──────────
-STEER_CMD      = 25.0  # [deg] 변경할 때 고정 스티어
-CHANGE_FRAMES  = 15    # [loops] ≈ 15/30Hz = 0.5 s
-SPEED_CRUISE   = 30     # [km/h] 평상시
-SPEED_CHANGE   = 5     # [km/h] 차선 변경 시
+STEER_CMD      = 80.0  # [deg] 변경할 때 고정 스티어
+CHANGE_FRAMES  = 100    # [loops] ≈ 15/30Hz = 0.5 s
+SPEED_CRUISE   = 60     # [km/h] 평상시
+SPEED_CHANGE   = 30     # [km/h] 차선 변경 시
 
 class Obstacle:                    # 간편 구조체
     def __init__(self,x=None,y=None,dist=None):
@@ -34,7 +34,7 @@ class Obstacle:                    # 간편 구조체
 class StaticAvoidance:
     def __init__(self):
         # ── ROS I/O ──
-        rospy.Subscriber("/raw_obstacles_static", Obstacles, self.obstacleCB)
+        rospy.Subscriber("/raw_obstacles_static", CarObstacles, self.obstacleCB)
         rospy.Subscriber("/heading",  Float64,  self.headingCB)  # 유지-호환
         rospy.Subscriber("/usb_cam/image_raw", Image, self.imageCB)  # 카메라 이미지 추가
         self.pub = rospy.Publisher("/xycar_motor_static",xycar_motor, queue_size=1)
@@ -48,6 +48,7 @@ class StaticAvoidance:
         self.dir   = None        # 이번에 꺾을 방향
         self.counter_change = 0  # C 단계 남은 frame 수
         self.obs = []
+        self.roi_x_max = ROI_X_MAX
 
         rate = rospy.Rate(30)
         while not rospy.is_shutdown():
@@ -63,11 +64,13 @@ class StaticAvoidance:
             self.publish(SPEED_CRUISE, 0.0, False)
 
         elif self.state == "C":               # 차선 변경 중
-            steer = -STEER_CMD if self.dir=="RIGHT" else STEER_CMD
+            steer = STEER_CMD if self.dir=="RIGHT" else -STEER_CMD
+            steer = (self.counter_change - CHANGE_FRAMES / 2) / (CHANGE_FRAMES / 2) * steer  # 점진적 조향
             self.publish(SPEED_CHANGE, steer, True)
             self.counter_change -= 1
             if self.counter_change <= 0:      # 타이머 끝 → 직진
                 self.finish_change()
+                self.roi_x_max = 13.5  # 차선 변경 후 전방 범위 늘림
 
     # ────────── 차선 변경 개시 ──────────
     def start_change(self):
@@ -86,12 +89,12 @@ class StaticAvoidance:
     # ────────── 같은 차선 장애물 유무 ──────────
     def detect_in_lane(self):
         for ob in self.obs:
-            if not (0 < ob.x < ROI_X_MAX):          # 전방 범위
+            if not (0 < ob.x < self.roi_x_max):          # 전방 범위
                 continue
-            if self.lane=="LEFT"  and 0.0 <= ob.y <= LANE_HALF:
+            if self.lane=="LEFT"  and -LANE_HALF <= ob.y <= LANE_HALF:
                 rospy.loginfo("[STATIC] 장애물 인식! (LEFT 차선)")
                 return True
-            if self.lane=="RIGHT" and -LANE_HALF <= ob.y <= 0.0:
+            if self.lane=="RIGHT" and -LANE_HALF <= ob.y <= LANE_HALF:
                 rospy.loginfo("[STATIC] 장애물 인식! (RIGHT 차선)")
                 return True
         return False
@@ -120,8 +123,8 @@ class StaticAvoidance:
         for ob in self.obs:
             # LiDAR 기준 x: 전방거리, y: 좌우거리
             # 이미지 기준: x → 가로축, y → 세로축 (아래가 +)
-            px = int(w / 2 + ob.y * 60)  # 좌우 1m당 100px
-            py = int(h - ob.x * 60)      # 전후 1m당 100px, 아래가 +이므로 h에서 빼줌
+            px = int(w / 2 + ob.y * 50)  # 좌우 1m당 100px
+            py = int(h - ob.x * 50)      # 전후 1m당 100px, 아래가 +이므로 h에서 빼줌
 
             if 0 <= px < w and 0 <= py < h:
                 cv2.circle(img_copy, (px, py), 8, (0, 0, 255), -1)

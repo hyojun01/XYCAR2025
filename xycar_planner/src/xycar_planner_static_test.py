@@ -7,7 +7,7 @@ from __future__ import print_function
 from xycar_msgs.msg import xycar_motor, XycarMotor  # xycar 모터 메시지 모듈 임포트
 from sensor_msgs.msg import Imu  # IMU 데이터 메시지 모듈 임포트
 from std_msgs.msg import Float32, String, Int64 # Float32 메시지 모듈 임포트
-from obstacle_detector.msg import Waypoint, Obstacles
+from obstacle_detector.msg import Waypoint, Obstacles, CarObstacles
 
 from math import radians, pi  # 각도를 라디안으로 변환하는 함수 임포트
 
@@ -21,7 +21,6 @@ import time, math
 import rospy  # ROS 파이썬 라이브러리 임포트
 from sensor_msgs.msg import Image, CompressedImage  # 이미지 데이터 메시지 모듈 임포트
 
-from obstacle_detector.msg import Obstacles
 
 
 import tf
@@ -67,7 +66,7 @@ class XycarPlanner:
             rospy.Subscriber("/xycar_motor_lane", xycar_motor, self.ctrlLaneCB)
             rospy.Subscriber("/xycar_motor_static", xycar_motor, self.ctrlStaticCB)
             rospy.Subscriber("/traffic_light", Int64, self.trafficLightCB)
-            rospy.Subscriber("/raw_obstacles_static", Obstacles, self.obstacleCB)
+            rospy.Subscriber("/raw_obstacles_static", CarObstacles, self.obstacleCB)
             rospy.Subscriber('/rubbercone_waypoints', Waypoint,  self.ctrlRubberconeCB)
 
 
@@ -159,7 +158,7 @@ class XycarPlanner:
                     ang = math.degrees(math.atan2(y, x))
                     speed, steer = self.rcon_speed, -ang
                     mode_str = "Rubbercone"
-                elif self.static_mode_flag == True:
+                elif self.static_mode_flag:
                     # 정적 장애물 회피 모드
                     speed = self.ctrl_static.speed
                     steer = self.ctrl_static.angle

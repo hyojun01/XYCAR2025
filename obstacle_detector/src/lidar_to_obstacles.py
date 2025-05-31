@@ -12,7 +12,7 @@ LiDAR → Obstacles 변환 노드
 import rospy, math
 import numpy as np
 from sensor_msgs.msg import LaserScan
-from obstacle_detector.msg import Obstacles, CircleObstacle
+from obstacle_detector.msg import Obstacles, CircleObstacle, CarObstacles
 from geometry_msgs.msg    import Point, Vector3
 from std_msgs.msg         import Float64
 
@@ -31,7 +31,7 @@ class Lidar2Obstacles:
 
         self.scan_msg = None
         self.pub_obs  = rospy.Publisher("/raw_obstacles_static",
-                                        Obstacles, queue_size=1)
+                                        CarObstacles, queue_size=1)
         self.pub_dist = rospy.Publisher("/front_obstacle_distance",
                                         Float64,   queue_size=1)
         rospy.Subscriber("/scan", LaserScan, self.scan_cb, queue_size=1)
@@ -62,7 +62,7 @@ class Lidar2Obstacles:
 
         # 스캔에 값이 없으면 빈 메시지 반환
         if len(ranges) == 0:
-            return Obstacles(header=scan.header), float('inf')
+            return CarObstacles(header=scan.header), float('inf')
 
         # 3) 극 → 직교 좌표
         xs = ranges * np.cos(angles)
@@ -104,7 +104,7 @@ class Lidar2Obstacles:
         d_min = float(np.min(ranges)) if len(ranges) else float('inf')
 
         # 7) Obstacles 메시지 작성
-        obs_msg = Obstacles()
+        obs_msg = CarObstacles()
         obs_msg.header.stamp    = rospy.Time.now()
         obs_msg.header.frame_id = scan.header.frame_id
         obs_msg.circles         = circles
