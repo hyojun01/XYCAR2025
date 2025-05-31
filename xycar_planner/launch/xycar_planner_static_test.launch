@@ -6,7 +6,7 @@
   <include file="$(find heading)/launch/imu_heading.launch"/>
 
   <!-- 정적 장애물 주행 로직 진행 -->
-  <!-- <include file="$(find obstacle_detector)/launch/rubbercone_obstacle.launch"/> -->
+  <include file="$(find obstacle_detector)/launch/rubbercone_obstacle.launch"/>
 
   <include file="$(find cv_detect)/launch/traffic_detection.launch"/>
 

@@ -1,32 +1,8 @@
 <launch>
-  <arg name="version"   default="safe"/>
-  <arg name="direction" default="left"/>
-
-  <!-- 1) 정적 장애물 회피 (Python) -->
-  <node name="static_obstacle_avoidance"
-        pkg="obstacle_detector"
-        type="static_obstacle_avoidance.py"
-        output="screen">
-    <param name="version"   value="$(arg version)"/>
-    <param name="direction" value="$(arg direction)"/>
-    <param name="target_frame"   value="map"/>           <!-- 예시: 지도 프레임 -->
-    <param name="base_frame_id"  value="base_link"/>     <!-- 예시: 차체 프레임 -->
-  </node>
-
   <node name="rubbercone_detector"
         pkg="obstacle_detector"
         type="rubbercone_detector.py"
         output="screen"
         launch-prefix="python3">
-    <!-- 거리 필터 -->
-    <param name="min_range"   value="1.0"/>
-    <param name="max_range"   value="30.0"/>
-    <!-- 좌/우 ROI 각도 -->
-    <param name="left_min_deg"  value="5.0"/>
-    <param name="left_max_deg"  value="75.0"/>
-    <!-- <param name="right_min_deg" value="-60.0"/>
-    <param name="right_max_deg" value="-20.0"/> -->
-    <!-- 감지 거리 -->
-    <param name="detect_dist" value="10"/>
   </node>
 </launch>

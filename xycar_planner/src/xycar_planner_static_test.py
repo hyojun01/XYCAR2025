@@ -105,9 +105,10 @@ class XycarPlanner:
             self.latest_wp          = None   # (x,y)
             self.target_wp          = None   # 고정된 목표점
             self.rubber_start_time  = None
+            self.no_points_frames   = 0 
 
             # 파라미터
-            self.rcon_speed   = rospy.get_param('~rcon_speed', 10.0)
+            self.rcon_speed   = rospy.get_param('~rcon_speed', 8.0)
             self.entry_thresh = 3          # 연속 검출 프레임 수
             self.exit_thresh  = 5          # 연속 미검출 프레임 수
             self.reach_dist   = 0.3        # 목표 도달 임계거리[m]
@@ -115,54 +116,87 @@ class XycarPlanner:
 
             rate = rospy.Rate(30)  # 루프 주기 설정
             while not rospy.is_shutdown():  # ROS 노드가 종료될 때까지 반복
+                # self.wp_cnt와 self.latest_wp는 ctrlRubberconeCB에 의해 비동기적으로 업데이트됩니다.
+                # 현재 사이클에서 웨이포인트 사용 가능 여부 판단:
+                current_wp_available = (self.wp_cnt >= 1 and self.latest_wp is not None)
 
-                # MODE 판별
-                # 루프 내부에 속도 제어
-                
-                # — 상태 머신 업데이트 —
-                # 1) 진입 조건
+                # — 라바콘 모드 상태 업데이트 —
                 if not self.rubber_mode:
-                    if self.wp_cnt >= 1:
+                    # 1) 모드 진입 조건: 웨이포인트 검출
+                    if current_wp_available:
                         self.detected_frames += 1
+                        # self.lost_frames = 0 # 필요시 여기서도 lost_frames 초기화 가능
                     else:
                         self.detected_frames = 0
+                    
+                    # ── 1) 라바콘 모드 진입 조건 ──
                     if  self.detected_frames >= self.entry_thresh:
                         self.rubber_mode       = True
                         self.rubber_start_time = rospy.Time.now()
-                        self.target_wp         = self.latest_wp
+                        self.target_wp         = self.latest_wp # 진입 시점의 웨이포인트를 타겟으로 설정
                         rospy.loginfo("=== Enter Rubbercone Mode ===")
-                else:
+                        if self.target_wp:
+                             rospy.loginfo(f"Target WP set to: ({self.target_wp[0]:.2f}, {self.target_wp[1]:.2f})")
+                        self.lost_frames = 0 # 모드 진입 시 lost_frames 초기화
+                        # self.detected_frames = 0 # 빠른 재진입 방지를 위해 detected_frames 초기화 가능
+                else: # self.rubber_mode is True (라바콘 모드 실행 중)
                     # 2) 모드 중: 목표 업데이트 및 종료 체크
-                    if  self.wp_cnt >= 1:
+                    if current_wp_available:
                         # 웨이포인트가 계속 들어오면 타겟 갱신
                         self.target_wp = self.latest_wp
-                        self.lost_frames = 0
+                        self.lost_frames = 0 # 유효한 웨이포인트를 받았으므로 lost_frames 초기화
                     else:
+                        # 현재 유효한 웨이포인트가 없음 (self.wp_cnt < 1)
                         self.lost_frames += 1
+                        rospy.loginfo(f"Rubbercone Mode: No new waypoints, lost_frames = {self.lost_frames}/{self.exit_thresh}")
 
-                    # 종료 기준: 도달, 미검출 지속, 시간 초과
-                    dist_to_wp = math.hypot(*(self.target_wp or (float('inf'),0)))
-                    elapsed    = (rospy.Time.now() - self.rubber_start_time).to_sec()
-                    if (dist_to_wp < self.reach_dist
-                        or self.lost_frames >= self.exit_thresh
-                        or elapsed >= self.max_duration):
-                        self.rubber_mode     = False
-                        self.detected_frames = 0
-                        self.lost_frames     = 0
-                        rospy.loginfo("=== Exit Rubbercone Mode ===")
+                    # ── 2a) 라바콘 모드 탈출 조건: 포인트 소실 ──
+                    if self.lost_frames >= self.exit_thresh:
+                        rospy.loginfo(f"=== Exit Rubbercone Mode (Lost Points: {self.lost_frames} frames) ===")
+                        self.rubber_mode = False
+                        self.lost_frames = 0       # 다음 진입을 위해 초기화
+                        self.detected_frames = 0   # 새로운 검출 시퀀스를 위해 초기화
+                        self.target_wp = None      # 타겟 포인트 초기화
+                        self.rubber_start_time = None # 시작 시간 초기화
+
+                        speed = 20
+                        steer = 80
+                        mode_str = "StaticObs"
+
+                        for _ in range(50):  # 정적 장애물 모드로 전환 후 잠시 유지
+                            self.ctrl_cmd.speed = speed
+                            self.ctrl_cmd.angle = steer
+                            self.ctrl_cmd_pub.publish(self.ctrl_cmd)
+                            self.mode_pub.publish(mode_str)
+
+                            rate.sleep()    
+
+                        continue
+
+                    # # ── 2b) 라바콘 모드 탈출 조건: 시간 초과 ──
+                    # # 이전 조건에서 self.rubber_mode가 false가 되었을 수 있으므로 다시 확인
+                    # if self.rubber_mode and self.rubber_start_time and \
+                    #    (rospy.Time.now() - self.rubber_start_time).to_sec() > self.max_duration:
+                    #     rospy.loginfo(f"=== Exit Rubbercone Mode (Max duration {self.max_duration:.1f}s reached) ===")
+                    #     self.rubber_mode = False
+                    #     self.lost_frames = 0
+                    #     self.detected_frames = 0
+                    #     self.target_wp = None
+                    #     self.rubber_start_time = None
 
                 # — 제어 명령 결정 —
-                if self.rubber_mode and self.target_wp:
-                    # 라바콘 모드
-                    x, y = self.target_wp
-                    ang = math.degrees(math.atan2(y, x))
-                    speed, steer = self.rcon_speed, -ang
-                    mode_str = "Rubbercone"
-                elif self.static_mode_flag:
+
+                if self.static_mode_flag:
                     # 정적 장애물 회피 모드
                     speed = self.ctrl_static.speed
                     steer = self.ctrl_static.angle
                     mode_str = "StaticObs"
+                elif self.rubber_mode and self.target_wp:
+                    # 라바콘 모드
+                    x, y = self.target_wp
+                    ang = 2.2 * math.degrees(math.atan2(y, x))
+                    speed, steer = self.rcon_speed, -ang
+                    mode_str = "Rubbercone"
                 else:
                     # 차선 주행 모드
                     speed = self.ctrl_lane.speed
@@ -211,7 +245,7 @@ class XycarPlanner:
     def ctrlRubberconeCB(self, msg):
         # Waypoint 메시지에서 cnt, x_arr, y_arr를 읽어옵니다.
         self.wp_cnt = msg.cnt
-        rospy.loginfo(f"[CTRL_CB] got waypoint cnt={msg.cnt}, x0={msg.x_arr[0]:.2f}, y0={msg.y_arr[0]:.2f}")
+        # rospy.loginfo(f"[CTRL_CB] got waypoint cnt={msg.cnt}, x0={msg.x_arr[0]:.2f}, y0={msg.y_arr[0]:.2f}")
         if msg.cnt >= 1 and len(msg.x_arr) > 0 and len(msg.y_arr) > 0:
             # 첫 번째 웨이포인트만 사용
             self.latest_wp = (msg.x_arr[0], msg.y_arr[0])
