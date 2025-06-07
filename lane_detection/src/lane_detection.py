@@ -1,66 +1,57 @@
 #!/usr/bin/env python3
-
-# 기본 Python3 인터프리터 설정
+# -*- coding: utf-8 -*-
 
 from __future__ import print_function
-
-from xycar_msgs.msg import xycar_motor  # xycar 모터 메시지 모듈 임포트
-
-import cv2  # OpenCV 라이브러리 임포트
-
-from slidewindow_both_lane import SlideWindow  # 슬라이드 윈도우 알고리즘 모듈 임포트
-
-from cv_bridge import CvBridge, CvBridgeError  # CV-Bridge 라이브러리 임포트
-
-import rospy  # ROS 파이썬 라이브러리 임포트
-from sensor_msgs.msg import Image  # 이미지 데이터 메시지 모듈 임포트
-
+from xycar_msgs.msg import xycar_motor 
+import cv2 # OpenCV 라이브러리
+from slidewindow_both_lane import SlideWindow # 슬라이딩 윈도우 방식의 차선 감지 클래스
+from cv_bridge import CvBridge, CvBridgeError 
+import rospy 
+from sensor_msgs.msg import Image 
 from shared_function import *
 
-
-
-# PID 클래스 정의
+# PID 제어기 클래스
 class PID():
     def __init__(self, kp, ki, kd):
-        self.kp = kp  # 비례 이득 설정
-        self.ki = ki  # 적분 이득 설정
-        self.kd = kd  # 미분 이득 설정
-        self.p_error = 0.0  # 이전 비례 오차 초기화
-        self.i_error = 0.0  # 적분 오차 초기화
-        self.d_error = 0.0  # 미분 오차 초기화
+        # PID 제어 파라미터 초기화
+        self.kp = kp   
+        self.ki = ki  
+        self.kd = kd  
+        # 오차 값 초기화
+        self.p_error = 0.0  
+        self.i_error = 0.0  
+        self.d_error = 0.0  
 
-    def pid_control(self, cte):
-        self.d_error = cte - self.p_error  # 미분 오차 계산
-        self.p_error = cte  # 비례 오차 갱신
-        self.i_error += cte  # 적분 오차 갱신
-
-        # PID 제어 계산
+    # PID 제어 값을 계산하는 메소드
+    def pid_control(self, cte): 
+        self.d_error = cte - self.p_error  
+        self.p_error = cte  
+        self.i_error += cte  
+        
         return self.kp * self.p_error + self.ki * self.i_error + self.kd * self.d_error
 
-
-
+# 차선 감지 및 차량 제어를 위한 메인 클래스
 class LaneDetection(object):
     def __init__(self):
-        rospy.init_node('lane_detection', anonymous=True)  # ROS 노드 초기화
+        rospy.init_node('lane_detection', anonymous=True)  
         
         try:
-            # 카메라와 IMU 데이터 구독
+            # 이미지 토픽 구독 설정
             rospy.Subscriber("/usb_cam/image_raw", Image, self.cameraCB)
 
-            # 모터 제어 명령과 현재 속도 퍼블리셔 설정
+            # 차량 제어 명령 발행 설정
             self.ctrl_cmd_pub = rospy.Publisher('/xycar_motor_lane', xycar_motor, queue_size=1)
-            # self.ctrl_cmd_pub = rospy.Publisher('/xycar_motor', xycar_motor, queue_size=1)
             
-            self.bridge = CvBridge()  # CV-Bridge 초기화
-            self.ctrl_cmd_msg = xycar_motor()  # 모터 제어 메시지 초기화
+            self.bridge = CvBridge()  
+            self.ctrl_cmd_msg = xycar_motor()  
+            self.slidewindow = SlideWindow()  
 
-            self.slidewindow = SlideWindow()  # 슬라이드 윈도우 알고리즘 초기화
-
-            src_pts = np.float32([[ 1, 479],    # 좌측 하단 (약 11 % 지점)
-                      [220, 260],    # 좌측 상단 (y↑ 240 px, x≈44 %)
-                      [420, 260],    # 우측 상단
-                      [638, 479]])   # 우측 하단 (약 89 %)
-
+            # 원근 변환(Bird's-eye view)을 위한 원본 이미지 상의 4개 점 좌표
+            src_pts = np.float32([[ 1, 479],    
+                      [220, 260],    
+                      [420, 260],    
+                      [638, 479]])   
+            # 원근 변환 후 결과 이미지 상의 4개 점 좌표
             dst_pts = np.float32([[ 70, 479],
                       [ 70,   0],
                       [570,   0],
@@ -68,82 +59,75 @@ class LaneDetection(object):
 
             self.version = rospy.get_param('~version', 'safe')
 
-            # rospy.loginfo(f"LANE: {self.version}")
-
-            
-            self.steer = 0.0  # 조향각 초기화
-            self.motor = 0.0  # 모터 속도 초기화
-           
-
-            # 원래 잘되던 버전
+            # 조향각 및 모터 속도 초기화
+            self.steer = 0.0  
+            self.motor = 0.0  
+                       
+            # 주행 모드('fast' 또는 'safe')에 따른 PID 파라미터 설정
             if self.version == 'fast':
-                self.pid = PID(0.78, 0.0005, 0.405) # 0828 아침 잘되는버전
-            else:
-                # self.pid = PID(0.7, 0.0008, 0.15)
-                # self.pid = PID(0.58, 0.0005, 0.305) # 0828 아침 잘되는버전
-                self.pid = PID(0.78, 0.0005, 0.405) # 0828 아침 잘되는버전
+                self.pid = PID(0.78, 0.0005, 0.405) 
+            else:             
+                self.pid = PID(0.78, 0.0005, 0.405) 
 
-            self.cv_image = None  # 카메라 이미지 초기화
-            
+            self.cv_image = None  # 수신된 카메라 이미지를 저장할 변수
+                       
+            rate = rospy.Rate(30) 
 
-            # IMU 기반 속도 계산을 위한 변수 초기화
-            rate = rospy.Rate(30)  # 루프 주기 설정
-            while not rospy.is_shutdown():  # ROS 노드가 종료될 때까지 반복
-                if self.cv_image is not None:  # 카메라 이미지가 있는 경우
-                    binary = process_image(self.cv_image)
-                    # cv2.imshow("Binary Image", binary * 255) # Multiply by 255 if binary is 0/1
-                    warped = warper(binary, src_pts, dst_pts)
-                    # cv2.imshow("Warped Image", warped * 255) # Multiply by 255 if warped is 0/1
-                    cropped_img = roi_for_lane(warped)
-                    # cv2.imshow("ROI Image", cropped_img * 255) # Multiply by 255 if roi is 0/1
+            while not rospy.is_shutdown():  
+                if self.cv_image is not None:  
+                    # 1. 이미지 전처리 (그레이스케일, 블러, 이진화 등)
+                    binary = process_image(self.cv_image)                    
+                    # 2. 원근 변환 (Bird's-eye view)
+                    warped = warper(binary, src_pts, dst_pts)                    
+                    # 3. 차선 감지를 위한 관심 영역(ROI) 설정
+                    cropped_img = roi_for_lane(warped)                    
+                    # 4. 슬라이딩 윈도우를 이용한 차선 감지 및 차선 중심 x좌표 계산
+                    out_img, x_location, _ = self.slidewindow.slidewindow(cropped_img)  
 
-                    # out_img, x_location, _ = slidewindow(roi)  # 슬라이드 윈도우 알고리즘 적용
-                    out_img, x_location, _ = self.slidewindow.slidewindow(cropped_img)  # 슬라이드 윈도우 알고리즘 적용
-
-                    if x_location == None:  # x 위치가 없는 경우
-                        x_location = last_x_location  # 이전 x 위치 사용
+                    # 차선 중심 x좌표가 감지되지 않았을 경우 이전 값 사용
+                    if x_location == None:  
+                        x_location = last_x_location  # last_x_location 변수가 이전에 정의되어 있어야 함
                     else:
-                        last_x_location = x_location  # x 위치 갱신
-                    
-                    
-                    self.steer = round(self.pid.pid_control(x_location - 320))  # PID 제어를 통한 각도 계산
-                    self.steer = self.steer * 0.5  # 조향각을 0.5으로 스케일링
+                        last_x_location = x_location  # 현재 감지된 x_location을 다음을 위해 저장
+                                       
+                    # PID 제어기를 사용하여 조향각 계산 (이미지 중앙(320)과의 차이를 오차로 사용)
+                    self.steer = round(self.pid.pid_control(x_location - 320))  
+                    self.steer = self.steer * 0.5  
 
                     if self.version == 'fast':
-                        self.motor = 60 # 모터 속도 설정 30
+                        self.motor = 60 
                     else:
                         self.motor = 60
                     
-                    self.publishCtrlCmd(self.motor, self.steer)  # 제어 명령 퍼블리시
-
+                    # 계산된 모터 속도와 조향각을 차량에 전달
+                    self.publishCtrlCmd(self.motor, self.steer)  
 
                     cv2.imshow('out_img', out_img)
-                    
+            
+                    cv2.waitKey(1)  
 
-                    cv2.waitKey(1)  # 키 입력 대기
-
-
-
-                rate.sleep()  # 주기마다 대기
+                rate.sleep()  
                 
         finally:
-            cv2.destroyAllWindows()  # 창 닫기
+            cv2.destroyAllWindows()  
         
+    # 모터 속도와 조향각을 ROS 토픽으로 발행하는 메소드
     def publishCtrlCmd(self, motor_msg, servo_msg):
-        self.ctrl_cmd_msg.speed = motor_msg  # 모터 속도 설정
-        self.ctrl_cmd_msg.angle = servo_msg  # 조향각 설정
-        self.ctrl_cmd_msg.flag = True
-        self.ctrl_cmd_pub.publish(self.ctrl_cmd_msg)  # 명령 퍼블리시
+        self.ctrl_cmd_msg.speed = motor_msg  
+        self.ctrl_cmd_msg.angle = servo_msg 
+        self.ctrl_cmd_msg.flag = True 
+        self.ctrl_cmd_pub.publish(self.ctrl_cmd_msg) 
         
+    # 카메라 이미지 토픽 콜백 함수
     def cameraCB(self, msg):
         try:
-            self.cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")  # ROS 이미지 메시지를 OpenCV 이미지로 변환
+            # ROS Image 메시지를 OpenCV 이미지(bgr8)로 변환
+            self.cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")  
         except CvBridgeError as e:
             rospy.logwarn(e)
 
-
 if __name__ == '__main__':
     try:
-        autopilot_control = LaneDetection()  # AutopilotControl 객체 생성
+        autopilot_control = LaneDetection()  
     except rospy.ROSInterruptException:
-        pass  # 예외 발생 시 무시하고 종료
+        pass
