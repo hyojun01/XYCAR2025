@@ -22,8 +22,8 @@ LANE_HALF      = 0.6   # [m] 차선 중앙에서 y±0.6 이내가 “현재 차�
 ROI_X_MAX      = 7.0   # [m] 전방 장애물 감지 범위
 
 # ────────── 차선 변경 파라미터 ──────────
-STEER_CMD      = 80.0  # [deg] 변경할 때 고정 스티어
-CHANGE_FRAMES  = 100    # [loops] ≈ 15/30Hz = 0.5 s
+STEER_CMD      = 77.0  # [deg] 변경할 때 고정 스티어
+CHANGE_FRAMES  = 105    # [loops] ≈ 15/30Hz = 0.5 s
 SPEED_CRUISE   = 60     # [km/h] 평상시
 SPEED_CHANGE   = 30     # [km/h] 차선 변경 시
 
@@ -77,14 +77,14 @@ class StaticAvoidance:
         self.dir = "RIGHT" if self.lane=="LEFT" else "LEFT"
         self.counter_change = CHANGE_FRAMES
         self.state = "C"
-        rospy.loginfo(f"[AVOID] change to {self.dir}")
+        # rospy.loginfo(f"[AVOID] change to {self.dir}")
 
     # ────────── 차선 변경 완료 ──────────
     def finish_change(self):
         self.state = "L"
         self.lane  = "RIGHT" if self.lane=="LEFT" else "LEFT"
         self.dir   = None
-        rospy.loginfo(f"[AVOID] lane={self.lane}  straight ahead")
+        # rospy.loginfo(f"[AVOID] lane={self.lane}  straight ahead")
 
     # ────────── 같은 차선 장애물 유무 ──────────
     def detect_in_lane(self):
@@ -92,10 +92,10 @@ class StaticAvoidance:
             if not (0 < ob.x < self.roi_x_max):          # 전방 범위
                 continue
             if self.lane=="LEFT"  and -LANE_HALF <= ob.y <= LANE_HALF:
-                rospy.loginfo("[STATIC] 장애물 인식! (LEFT 차선)")
+                # rospy.loginfo("[STATIC] 장애물 인식! (LEFT 차선)")
                 return True
             if self.lane=="RIGHT" and -LANE_HALF <= ob.y <= LANE_HALF:
-                rospy.loginfo("[STATIC] 장애물 인식! (RIGHT 차선)")
+                # rospy.loginfo("[STATIC] 장애물 인식! (RIGHT 차선)")
                 return True
         return False
 
@@ -128,10 +128,10 @@ class StaticAvoidance:
 
             if 0 <= px < w and 0 <= py < h:
                 cv2.circle(img_copy, (px, py), 8, (0, 0, 255), -1)
-                rospy.loginfo("[STATIC] 장애물 인식!")
+                # rospy.loginfo("[STATIC] 장애물 인식!")
                 cv2.putText(img_copy, f"{ob.dist:.1f}m", (px+5, py-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
-        cv2.imshow("Obstacle View", img_copy)
+        # cv2.imshow("Obstacle View", img_copy)
         cv2.waitKey(1)
 
     # ────────── 퍼블리시 ──────────

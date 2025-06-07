@@ -91,11 +91,11 @@ class LaneDetection(object):
             while not rospy.is_shutdown():  # ROS 노드가 종료될 때까지 반복
                 if self.cv_image is not None:  # 카메라 이미지가 있는 경우
                     binary = process_image(self.cv_image)
-                    cv2.imshow("Binary Image", binary * 255) # Multiply by 255 if binary is 0/1
+                    # cv2.imshow("Binary Image", binary * 255) # Multiply by 255 if binary is 0/1
                     warped = warper(binary, src_pts, dst_pts)
-                    cv2.imshow("Warped Image", warped * 255) # Multiply by 255 if warped is 0/1
+                    # cv2.imshow("Warped Image", warped * 255) # Multiply by 255 if warped is 0/1
                     cropped_img = roi_for_lane(warped)
-                    cv2.imshow("ROI Image", cropped_img * 255) # Multiply by 255 if roi is 0/1
+                    # cv2.imshow("ROI Image", cropped_img * 255) # Multiply by 255 if roi is 0/1
 
                     # out_img, x_location, _ = slidewindow(roi)  # 슬라이드 윈도우 알고리즘 적용
                     out_img, x_location, _ = self.slidewindow.slidewindow(cropped_img)  # 슬라이드 윈도우 알고리즘 적용

@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 
-def roi_for_lane(img, vert_ratio=0.3):
+def roi_for_lane(img, vert_ratio=0.34):
     """
     이미지의 아래쪽 일부(차선이 주로 보이는 영역)만 남기고 나머지는 제거합니다.
     vert_ratio: ROI 윗선이 이미지 높이의 몇 %에 위치할지 (0~1)

@@ -120,7 +120,7 @@ class SlideWindow:
         elif left_lane_reliably_found:
             # 왼쪽 차선만 신뢰성 있게 감지된 경우: x_current_left 기준으로 설정
             # x_current_left는 왼쪽 차선의 중심이므로, 차량 경로 중심은 오른쪽으로 차선 폭의 절반 이동
-            current_x_candidate = x_current_left + estimated_lane_width // 2
+            current_x_candidate = x_current_left + estimated_lane_width // 2 + 10
             x_location = int(alpha * current_x_candidate + (1 - alpha) * self.x_previous)
             # print("Left lane found: x_location =", x_location)
         elif right_lane_reliably_found:

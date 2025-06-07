@@ -108,7 +108,7 @@ class XycarPlanner:
             self.no_points_frames   = 0 
 
             # 파라미터
-            self.rcon_speed   = rospy.get_param('~rcon_speed', 8.0)
+            self.rcon_speed   = rospy.get_param('~rcon_speed', 10.0)
             self.entry_thresh = 3          # 연속 검출 프레임 수
             self.exit_thresh  = 5          # 연속 미검출 프레임 수
             self.reach_dist   = 0.3        # 목표 도달 임계거리[m]
@@ -134,9 +134,9 @@ class XycarPlanner:
                         self.rubber_mode       = True
                         self.rubber_start_time = rospy.Time.now()
                         self.target_wp         = self.latest_wp # 진입 시점의 웨이포인트를 타겟으로 설정
-                        rospy.loginfo("=== Enter Rubbercone Mode ===")
-                        if self.target_wp:
-                             rospy.loginfo(f"Target WP set to: ({self.target_wp[0]:.2f}, {self.target_wp[1]:.2f})")
+                        # rospy.loginfo("=== Enter Rubbercone Mode ===")
+                        # if self.target_wp:
+                            #  rospy.loginfo(f"Target WP set to: ({self.target_wp[0]:.2f}, {self.target_wp[1]:.2f})")
                         self.lost_frames = 0 # 모드 진입 시 lost_frames 초기화
                         # self.detected_frames = 0 # 빠른 재진입 방지를 위해 detected_frames 초기화 가능
                 else: # self.rubber_mode is True (라바콘 모드 실행 중)
@@ -159,11 +159,11 @@ class XycarPlanner:
                         self.target_wp = None      # 타겟 포인트 초기화
                         self.rubber_start_time = None # 시작 시간 초기화
 
-                        speed = 20
-                        steer = 80
+                        speed = 30
+                        steer = 48
                         mode_str = "StaticObs"
 
-                        for _ in range(50):  # 정적 장애물 모드로 전환 후 잠시 유지
+                        for _ in range(33):  # 정적 장애물 모드로 전환 후 잠시 유지
                             self.ctrl_cmd.speed = speed
                             self.ctrl_cmd.angle = steer
                             self.ctrl_cmd_pub.publish(self.ctrl_cmd)
@@ -214,7 +214,7 @@ class XycarPlanner:
                 self.ctrl_cmd.angle = steer
                 self.ctrl_cmd_pub.publish(self.ctrl_cmd)
                 self.mode_pub.publish(mode_str)
-                rospy.loginfo("[Mode:%s] speed=%.1f angle=%.1f", mode_str, speed, steer)
+                # rospy.loginfo("[Mode:%s] speed=%.1f angle=%.1f", mode_str, speed, steer)
 
                 rate.sleep()
                 

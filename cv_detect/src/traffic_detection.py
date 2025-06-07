@@ -71,7 +71,7 @@ class TrafficDetection:
         return centers
 
     def detect_traffic_light(self, image):
-        cv2.imshow("src", image)
+        # cv2.imshow("src", image)
         hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         
         h, s, v = cv2.split(hsv_image)
@@ -123,8 +123,8 @@ class TrafficDetection:
         red_centers = self.get_contour_centers(red_filtered_contours)
         green_centers = self.get_contour_centers(green_filtered_contours)
 
-        rospy.loginfo(f"Red Centers: {red_centers}")
-        rospy.loginfo(f"Green Centers: {green_centers}")
+        # rospy.loginfo(f"Red Centers: {red_centers}")
+        # rospy.loginfo(f"Green Centers: {green_centers}")
      
         # 중심 좌표 배열로 변환
         red_centers_flattened = [coord for center in red_centers for coord in center]
@@ -135,32 +135,32 @@ class TrafficDetection:
         
         if len(green_centers) > 0:
             green_valid = any(center[1] <= 80 for center in green_centers)
-            rospy.loginfo(f"Green centers Y: {[c[1] for c in green_centers]}")
+            # rospy.loginfo(f"Green centers Y: {[c[1] for c in green_centers]}")
         else:
             green_valid = False
 
         if len(red_centers) > 0:
             red_valid = any(center[1] <= 80 for center in red_centers)
-            rospy.loginfo(f"Red centers Y: {[c[1] for c in red_centers]}")
+            # rospy.loginfo(f"Red centers Y: {[c[1] for c in red_centers]}")
         else:
             red_valid = False
 
         if green_on and not red_on and green_valid:
             state = 2
             self.isgreen = True
-            rospy.loginfo(f"green")
+            # rospy.loginfo(f"green")
         elif red_on and not green_on and red_valid:
             state = 1
             self.isgreen = False
-            rospy.loginfo(f"red")
+            # rospy.loginfo(f"red")
         else:
             # 이전 상태 유지 판단
             if self.isgreen:
                 state = 2
-                rospy.loginfo(f"go")
+                # rospy.loginfo(f"go")
             else:
                 state = 1
-                rospy.loginfo(f"stop")
+                # rospy.loginfo(f"stop")
         msg = Int64()
         msg.data = state
         self.traffic_light_pub.publish(msg)
